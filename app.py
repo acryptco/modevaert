@@ -66,7 +66,9 @@ def parse_program(uploaded_files, members_list):
             if weekday_date_match:
                 if current_date:
                     meetings[current_date] = assigned
-                current_date = weekday_date_match.group(0)
+                # Add year to weekday dates for consistency
+                weekday_date = weekday_date_match.group(0)
+                current_date = f"{weekday_date} 2025"
                 assigned = set()
                 if 'Ingen møde' in line:
                     current_date = None
@@ -142,17 +144,16 @@ def generate_schedule(members, meetings):
     def sort_key(date_str):
         current_year = datetime.datetime.now().year
         
-        # Handle weekday dates like "Tirsdag 15 Oktober"
+        # Handle weekday dates like "Tirsdag 15 Oktober 2025"
         if date_str.startswith(('Tirsdag', 'Mandag')):
             day_match = re.search(r'\d{2}', date_str)
             month_match = re.search(r'(Januar|Februar|Marts|April|Maj|Juni|Juli|August|September|Oktober|November|December)', date_str)
+            year_match = re.search(r'\d{4}', date_str)
             if day_match and month_match:
                 day = int(day_match.group(0))
                 month = month_order.get(month_match.group(0), 0)
-                
-                # Use the same year as weekend dates since they're in the same schedule
-                # We'll use 2025 as the base year since that's what the weekend dates show
-                return (2025, month, day)
+                year = int(year_match.group(0)) if year_match else 2025
+                return (year, month, day)
         
         # Handle weekend dates like "Søndag 07 September 2025"
         elif date_str.startswith('Søndag'):
@@ -225,11 +226,8 @@ st.markdown("""
         margin-bottom: 2rem;
     }
     .upload-section {
-        background-color: #f8f9fa;
-        padding: 1.5rem;
-        border-radius: 10px;
-        border-left: 4px solid #667eea;
-        margin-bottom: 1.5rem;
+        padding: 1rem;
+        margin-bottom: 1rem;
     }
     .info-box {
         background-color: #e3f2fd;
@@ -297,7 +295,7 @@ with st.sidebar:
     """)
 
 # Upload section
-st.markdown("### 📤 Upload Filer")
+st.markdown("### Upload Filer")
 with st.container():
     col1, col2 = st.columns(2)
     
@@ -348,14 +346,16 @@ if uploaded_xlsx and uploaded_pdfs:
                     'Juli': 7, 'August': 8, 'September': 9, 'Oktober': 10, 'November': 11, 'December': 12
                 }
                 
-                # Handle weekday dates like "Tirsdag 15 Oktober"
+                # Handle weekday dates like "Tirsdag 15 Oktober 2025"
                 if date_str.startswith(('Tirsdag', 'Mandag')):
                     day_match = re.search(r'\d{2}', date_str)
                     month_match = re.search(r'(Januar|Februar|Marts|April|Maj|Juni|Juli|August|September|Oktober|November|December)', date_str)
+                    year_match = re.search(r'\d{4}', date_str)
                     if day_match and month_match:
                         day = int(day_match.group(0))
                         month = month_order.get(month_match.group(0), 0)
-                        return (2025, month, day)
+                        year = int(year_match.group(0)) if year_match else 2025
+                        return (year, month, day)
                 
                 # Handle weekend dates like "Søndag 07 September 2025"
                 elif date_str.startswith('Søndag'):
