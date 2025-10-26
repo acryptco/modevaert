@@ -57,11 +57,17 @@ def parse_program(uploaded_files, members_list):
         lines = text.split('\n')
         for line in lines:
             line = line.strip()
-            # Look for weekday meeting dates (e.g., "Tirsdag 15 September")
-            weekday_date_match = re.match(r'(Tirsdag|Mandag) \d{2} (September|Oktober|November|December|Januar|Februar|Marts|April|Maj|Juni|Juli|August)', line)
+            # Look for weekday meeting dates (e.g., "Tirsdag 15 September", "Torsdag 09 December")
+            weekday_date_match = re.match(r'(Tirsdag|Mandag|Torsdag) \d{2} (September|Oktober|November|December|Januar|Februar|Marts|April|Maj|Juni|Juli|August)', line)
             
             # Look for weekend meeting dates (e.g., "07/09/2025")
             weekend_date_match = re.match(r'(\d{2})/(\d{2})/(\d{4})', line)
+            
+            # Look for January format dates (e.g., "06. JAN | UGENS BIBELLÆSNING: ESAJAS 17-20")
+            january_date_match = re.search(r'(\d{2})\.\s*JAN', line)
+            
+            # Look for other Danish date formats (e.g., "01 Januar 26", "01. Januar 26")
+            danish_date_match = re.search(r'(\d{2})\.?\s*(Januar|Februar|Marts|April|Maj|Juni|Juli|August|September|Oktober|November|December)', line)
             
             if weekday_date_match:
                 if current_date:
@@ -86,6 +92,28 @@ def parse_program(uploaded_files, members_list):
                 month_name = month_names.get(month, month)
                 current_date = f"Søndag {day} {month_name} {year}"
                 assigned = set()
+            elif january_date_match:
+                if current_date:
+                    meetings[current_date] = assigned
+                # Handle January format (e.g., "06. JAN")
+                day = january_date_match.group(1)
+                current_date = f"Tirsdag {day} Januar 2026"
+                assigned = set()
+                if 'Ingen møde' in line:
+                    current_date = None
+                    continue
+            elif danish_date_match:
+                if current_date:
+                    meetings[current_date] = assigned
+                # Handle other Danish date formats (e.g., "01 Januar 26")
+                day, month = danish_date_match.groups()
+                # Determine year - assume 2026 for January dates, 2025 for others
+                year = "2026" if month == "Januar" else "2025"
+                current_date = f"Tirsdag {day} {month} {year}"
+                assigned = set()
+                if 'Ingen møde' in line:
+                    current_date = None
+                    continue
             if current_date:
                 # Extract all names from the line, handling various formats
                 names_found = set()
