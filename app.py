@@ -68,6 +68,13 @@ def parse_program(uploaded_files, members_list):
             
             # Look for other Danish date formats (e.g., "01 Januar 26", "01. Januar 26")
             danish_date_match = re.search(r'(\d{2})\.?\s*(Januar|Februar|Marts|April|Maj|Juni|Juli|August|September|Oktober|November|December)', line)
+
+            # Look for abbreviated Danish month formats (e.g., "03. FEB", "10 FEB")
+            abbrev_date_match = re.search(
+                r'(\d{2})\.?\s*(JAN|FEB|MAR|APR|MAJ|JUN|JUL|AUG|SEP|OKT|NOV|DEC)',
+                line,
+                re.IGNORECASE
+            )
             
             if weekday_date_match:
                 if current_date:
@@ -110,6 +117,23 @@ def parse_program(uploaded_files, members_list):
                 # Determine year - assume 2026 for January dates, 2025 for others
                 year = "2026" if month == "Januar" else "2025"
                 current_date = f"Tirsdag {day} {month} {year}"
+                assigned = set()
+                if 'Ingen møde' in line:
+                    current_date = None
+                    continue
+            elif abbrev_date_match:
+                if current_date:
+                    meetings[current_date] = assigned
+                # Handle abbreviated Danish month formats (e.g., "03. FEB")
+                day, abbrev_month = abbrev_date_match.groups()
+                month_map = {
+                    'JAN': 'Januar', 'FEB': 'Februar', 'MAR': 'Marts', 'APR': 'April',
+                    'MAJ': 'Maj', 'JUN': 'Juni', 'JUL': 'Juli', 'AUG': 'August',
+                    'SEP': 'September', 'OKT': 'Oktober', 'NOV': 'November', 'DEC': 'December'
+                }
+                month_name = month_map.get(abbrev_month.upper(), abbrev_month)
+                year = "2026" if month_name in ("Januar", "Februar", "Marts") else "2025"
+                current_date = f"Tirsdag {day} {month_name} {year}"
                 assigned = set()
                 if 'Ingen møde' in line:
                     current_date = None
