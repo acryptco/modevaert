@@ -142,11 +142,6 @@ def parse_program(uploaded_files, members_list):
                 if not tuesday_date:
                     tuesday_date = calculate_weekday_in_range(1, end_day, end_month, year, 1)
                 
-                # Calculate Sunday in the range (6 = Sunday)
-                sunday_date = calculate_weekday_in_range(start_day, 31, start_month, year, 6)
-                if not sunday_date:
-                    sunday_date = calculate_weekday_in_range(1, end_day, end_month, year, 6)
-                
                 current_date = None
                 current_weekend_date = None
                 
@@ -158,19 +153,11 @@ def parse_program(uploaded_files, members_list):
                     month_name = month_order[tuesday_date.month]
                     current_date = f"Tirsdag {tuesday_date.day:02d} {month_name} {tuesday_date.year}"
                     assigned = set()
-                
-                if sunday_date:
-                    month_order = {
-                        1: 'Januar', 2: 'Februar', 3: 'Marts', 4: 'April', 5: 'Maj', 6: 'Juni',
-                        7: 'Juli', 8: 'August', 9: 'September', 10: 'Oktober', 11: 'November', 12: 'December'
-                    }
-                    month_name = month_order[sunday_date.month]
-                    current_weekend_date = f"Søndag {sunday_date.day:02d} {month_name} {sunday_date.year}"
-                    weekend_assigned = set()
+                    # Weekend participants are already included in this section, 
+                    # so they'll be added to the same assigned set
                 
                 if 'Intet møde' in line or 'Ingen møde' in line:
                     current_date = None
-                    current_weekend_date = None
                     continue
             elif date_range_match:
                 # Handle single-month date ranges
@@ -194,10 +181,8 @@ def parse_program(uploaded_files, members_list):
                 end_day = int(end_day_str)
                 
                 # Calculate Tuesday (weekly meeting) - weekday 1
+                # Weekend meetings are already included in this section, so we only need Tuesday
                 tuesday_date = calculate_weekday_in_range(start_day, end_day, month_name, year, 1)
-                
-                # Calculate Sunday (weekend meeting) - weekday 6
-                sunday_date = calculate_weekday_in_range(start_day, end_day, month_name, year, 6)
                 
                 current_date = None
                 current_weekend_date = None
@@ -205,14 +190,11 @@ def parse_program(uploaded_files, members_list):
                 if tuesday_date:
                     current_date = f"Tirsdag {tuesday_date.day:02d} {month_name} {tuesday_date.year}"
                     assigned = set()
-                
-                if sunday_date:
-                    current_weekend_date = f"Søndag {sunday_date.day:02d} {month_name} {sunday_date.year}"
-                    weekend_assigned = set()
+                    # Weekend participants are already included in this section,
+                    # so they'll be added to the same assigned set
                 
                 if 'Intet møde' in line or 'Ingen møde' in line:
                     current_date = None
-                    current_weekend_date = None
                     continue
             elif weekday_date_match:
                 if current_date:
