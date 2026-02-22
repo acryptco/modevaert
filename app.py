@@ -45,6 +45,28 @@ def find_matching_member(pdf_name, members_list):
     
     return None
 
+def calculate_weekday_in_range(start_day, end_day, month_name, year, target_weekday):
+    """
+    Calculate the date of a specific weekday within a date range.
+    target_weekday: 0=Monday, 1=Tuesday, ..., 6=Sunday
+    """
+    month_order = {
+        'Januar': 1, 'Februar': 2, 'Marts': 3, 'April': 4, 'Maj': 5, 'Juni': 6,
+        'Juli': 7, 'August': 8, 'September': 9, 'Oktober': 10, 'November': 11, 'December': 12
+    }
+    
+    month_num = month_order.get(month_name, 1)
+    
+    # Find the target weekday in the range
+    for day in range(start_day, end_day + 1):
+        try:
+            date_obj = datetime.date(year, month_num, day)
+            if date_obj.weekday() == target_weekday:
+                return date_obj
+        except ValueError:
+            continue
+    return None
+
 def parse_program(uploaded_files, members_list):
     all_meetings = {}
     
@@ -53,10 +75,13 @@ def parse_program(uploaded_files, members_list):
             text = '\n'.join(page.extract_text() for page in pdf.pages if page.extract_text())
         meetings = {}
         current_date = None
+        current_weekend_date = None
         assigned = set()
+        weekend_assigned = set()
         lines = text.split('\n')
         for line in lines:
             line = line.strip()
+            
             # Look for weekday meeting dates (e.g., "Tirsdag 15 September", "Torsdag 09 December")
             weekday_date_match = re.match(r'(Tirsdag|Mandag|Torsdag) \d{2} (September|Oktober|November|December|Januar|Februar|Marts|April|Maj|Juni|Juli|August)', line)
             
@@ -76,19 +101,138 @@ def parse_program(uploaded_files, members_list):
                 re.IGNORECASE
             )
             
-            if weekday_date_match:
+            # NEW: Look for date range format (e.g., "marts 02-08")
+            date_range_match = re.search(
+                r'(januar|februar|marts|april|maj|juni|juli|august|september|oktober|november|december)\s+(\d{1,2})-(\d{1,2})',
+                line,
+                re.IGNORECASE
+            )
+            
+            # NEW: Look for cross-month date range (e.g., "Marts 30-april 05")
+            cross_month_range_match = re.search(
+                r'(januar|februar|marts|april|maj|juni|juli|august|september|oktober|november|december)\s+(\d{1,2})-(januar|februar|marts|april|maj|juni|juli|august|september|oktober|november|december)\s+(\d{1,2})',
+                line,
+                re.IGNORECASE
+            )
+            
+            if cross_month_range_match:
+                # Handle cross-month ranges first (more specific)
                 if current_date:
                     meetings[current_date] = assigned
+                if current_weekend_date:
+                    meetings[current_weekend_date] = weekend_assigned
+                
+                start_month_str, start_day_str, end_month_str, end_day_str = cross_month_range_match.groups()
+                
+                # Capitalize month names
+                month_capitalize = {
+                    'januar': 'Januar', 'februar': 'Februar', 'marts': 'Marts', 'april': 'April',
+                    'maj': 'Maj', 'juni': 'Juni', 'juli': 'Juli', 'august': 'August',
+                    'september': 'September', 'oktober': 'Oktober', 'november': 'November', 'december': 'December'
+                }
+                start_month = month_capitalize.get(start_month_str.lower(), start_month_str)
+                end_month = month_capitalize.get(end_month_str.lower(), end_month_str)
+                
+                year = 2026
+                start_day = int(start_day_str)
+                end_day = int(end_day_str)
+                
+                # Calculate Tuesday in the range (1 = Tuesday)
+                tuesday_date = calculate_weekday_in_range(start_day, 31, start_month, year, 1)
+                if not tuesday_date:
+                    tuesday_date = calculate_weekday_in_range(1, end_day, end_month, year, 1)
+                
+                # Calculate Sunday in the range (6 = Sunday)
+                sunday_date = calculate_weekday_in_range(start_day, 31, start_month, year, 6)
+                if not sunday_date:
+                    sunday_date = calculate_weekday_in_range(1, end_day, end_month, year, 6)
+                
+                current_date = None
+                current_weekend_date = None
+                
+                if tuesday_date:
+                    month_order = {
+                        1: 'Januar', 2: 'Februar', 3: 'Marts', 4: 'April', 5: 'Maj', 6: 'Juni',
+                        7: 'Juli', 8: 'August', 9: 'September', 10: 'Oktober', 11: 'November', 12: 'December'
+                    }
+                    month_name = month_order[tuesday_date.month]
+                    current_date = f"Tirsdag {tuesday_date.day:02d} {month_name} {tuesday_date.year}"
+                    assigned = set()
+                
+                if sunday_date:
+                    month_order = {
+                        1: 'Januar', 2: 'Februar', 3: 'Marts', 4: 'April', 5: 'Maj', 6: 'Juni',
+                        7: 'Juli', 8: 'August', 9: 'September', 10: 'Oktober', 11: 'November', 12: 'December'
+                    }
+                    month_name = month_order[sunday_date.month]
+                    current_weekend_date = f"Søndag {sunday_date.day:02d} {month_name} {sunday_date.year}"
+                    weekend_assigned = set()
+                
+                if 'Intet møde' in line or 'Ingen møde' in line:
+                    current_date = None
+                    current_weekend_date = None
+                    continue
+            elif date_range_match:
+                # Handle single-month date ranges
+                if current_date:
+                    meetings[current_date] = assigned
+                if current_weekend_date:
+                    meetings[current_weekend_date] = weekend_assigned
+                
+                month_str, start_day_str, end_day_str = date_range_match.groups()
+                
+                # Capitalize month names
+                month_capitalize = {
+                    'januar': 'Januar', 'februar': 'Februar', 'marts': 'Marts', 'april': 'April',
+                    'maj': 'Maj', 'juni': 'Juni', 'juli': 'Juli', 'august': 'August',
+                    'september': 'September', 'oktober': 'Oktober', 'november': 'November', 'december': 'December'
+                }
+                month_name = month_capitalize.get(month_str.lower(), month_str)
+                
+                year = 2026
+                start_day = int(start_day_str)
+                end_day = int(end_day_str)
+                
+                # Calculate Tuesday (weekly meeting) - weekday 1
+                tuesday_date = calculate_weekday_in_range(start_day, end_day, month_name, year, 1)
+                
+                # Calculate Sunday (weekend meeting) - weekday 6
+                sunday_date = calculate_weekday_in_range(start_day, end_day, month_name, year, 6)
+                
+                current_date = None
+                current_weekend_date = None
+                
+                if tuesday_date:
+                    current_date = f"Tirsdag {tuesday_date.day:02d} {month_name} {tuesday_date.year}"
+                    assigned = set()
+                
+                if sunday_date:
+                    current_weekend_date = f"Søndag {sunday_date.day:02d} {month_name} {sunday_date.year}"
+                    weekend_assigned = set()
+                
+                if 'Intet møde' in line or 'Ingen møde' in line:
+                    current_date = None
+                    current_weekend_date = None
+                    continue
+            elif weekday_date_match:
+                if current_date:
+                    meetings[current_date] = assigned
+                if current_weekend_date:
+                    meetings[current_weekend_date] = weekend_assigned
                 # Add year to weekday dates for consistency
                 weekday_date = weekday_date_match.group(0)
                 current_date = f"{weekday_date} 2025"
                 assigned = set()
+                weekend_assigned = set()
+                current_weekend_date = None
                 if 'Ingen møde' in line:
                     current_date = None
                     continue
             elif weekend_date_match:
                 if current_date:
                     meetings[current_date] = assigned
+                if current_weekend_date:
+                    meetings[current_weekend_date] = weekend_assigned
                 # Convert DD/MM/YYYY to a readable format
                 day, month, year = weekend_date_match.groups()
                 month_names = {
@@ -99,31 +243,43 @@ def parse_program(uploaded_files, members_list):
                 month_name = month_names.get(month, month)
                 current_date = f"Søndag {day} {month_name} {year}"
                 assigned = set()
+                weekend_assigned = set()
+                current_weekend_date = None
             elif january_date_match:
                 if current_date:
                     meetings[current_date] = assigned
+                if current_weekend_date:
+                    meetings[current_weekend_date] = weekend_assigned
                 # Handle January format (e.g., "06. JAN")
                 day = january_date_match.group(1)
                 current_date = f"Tirsdag {day} Januar 2026"
                 assigned = set()
+                weekend_assigned = set()
+                current_weekend_date = None
                 if 'Ingen møde' in line:
                     current_date = None
                     continue
             elif danish_date_match:
                 if current_date:
                     meetings[current_date] = assigned
+                if current_weekend_date:
+                    meetings[current_weekend_date] = weekend_assigned
                 # Handle other Danish date formats (e.g., "01 Januar 26")
                 day, month = danish_date_match.groups()
                 # Determine year - assume 2026 for January dates, 2025 for others
                 year = "2026" if month == "Januar" else "2025"
                 current_date = f"Tirsdag {day} {month} {year}"
                 assigned = set()
+                weekend_assigned = set()
+                current_weekend_date = None
                 if 'Ingen møde' in line:
                     current_date = None
                     continue
             elif abbrev_date_match:
                 if current_date:
                     meetings[current_date] = assigned
+                if current_weekend_date:
+                    meetings[current_weekend_date] = weekend_assigned
                 # Handle abbreviated Danish month formats (e.g., "03. FEB")
                 day, abbrev_month = abbrev_date_match.groups()
                 month_map = {
@@ -135,10 +291,14 @@ def parse_program(uploaded_files, members_list):
                 year = "2026" if month_name in ("Januar", "Februar", "Marts") else "2025"
                 current_date = f"Tirsdag {day} {month_name} {year}"
                 assigned = set()
+                weekend_assigned = set()
+                current_weekend_date = None
                 if 'Ingen møde' in line:
                     current_date = None
                     continue
-            if current_date:
+            
+            # Extract names for both weekly (Tuesday) and weekend (Sunday) meetings
+            if current_date or current_weekend_date:
                 # Extract all names from the line, handling various formats
                 names_found = set()
                 
@@ -169,10 +329,16 @@ def parse_program(uploaded_files, members_list):
                 for pdf_name in names_found:
                     matched_member = find_matching_member(pdf_name, members_list)
                     if matched_member:
-                        assigned.add(matched_member)
+                        if current_date:
+                            assigned.add(matched_member)
+                        if current_weekend_date:
+                            weekend_assigned.add(matched_member)
         
+        # Save any remaining dates
         if current_date:
             meetings[current_date] = assigned
+        if current_weekend_date:
+            meetings[current_weekend_date] = weekend_assigned
         
         # Merge meetings from this PDF into all_meetings
         for date, assigned_people in meetings.items():
@@ -196,8 +362,8 @@ def generate_schedule(members, meetings):
     def sort_key(date_str):
         current_year = datetime.datetime.now().year
         
-        # Handle weekday dates like "Tirsdag 15 Oktober 2025"
-        if date_str.startswith(('Tirsdag', 'Mandag')):
+        # Handle weekday dates like "Tirsdag 15 Oktober 2025", "Torsdag 09 December"
+        if date_str.startswith(('Tirsdag', 'Mandag', 'Torsdag')):
             day_match = re.search(r'\d{2}', date_str)
             month_match = re.search(r'(Januar|Februar|Marts|April|Maj|Juni|Juli|August|September|Oktober|November|December)', date_str)
             year_match = re.search(r'\d{4}', date_str)
@@ -398,8 +564,8 @@ if uploaded_xlsx and uploaded_pdfs:
                     'Juli': 7, 'August': 8, 'September': 9, 'Oktober': 10, 'November': 11, 'December': 12
                 }
                 
-                # Handle weekday dates like "Tirsdag 15 Oktober 2025"
-                if date_str.startswith(('Tirsdag', 'Mandag')):
+                # Handle weekday dates like "Tirsdag 15 Oktober 2025", "Torsdag 09 December"
+                if date_str.startswith(('Tirsdag', 'Mandag', 'Torsdag')):
                     day_match = re.search(r'\d{2}', date_str)
                     month_match = re.search(r'(Januar|Februar|Marts|April|Maj|Juni|Juli|August|September|Oktober|November|December)', date_str)
                     year_match = re.search(r'\d{4}', date_str)
