@@ -6,9 +6,40 @@ from io import BytesIO
 import datetime
 
 def parse_members(uploaded_file):
+    """Parse members and optional availability notes from the Excel file.
+
+    Column A (from row 3) contains names.
+    Column B (optional) contains notes such as 'Sunday only'.
+    """
     df = pd.read_excel(uploaded_file, header=None)
-    members = df.iloc[2:, 0].dropna().tolist()
-    return members
+
+    name_series = df.iloc[2:, 0]
+    notes_series = df.iloc[2:, 1] if df.shape[1] > 1 else None
+
+    members = []
+    availability = {}  # name -> availability flag, e.g. 'sunday_only'
+
+    for idx, name in name_series.items():
+        if pd.isna(name):
+            continue
+        name_str = str(name).strip()
+        if not name_str:
+            continue
+
+        members.append(name_str)
+
+        note_flag = None
+        if notes_series is not None:
+            note_val = notes_series.get(idx)
+            if isinstance(note_val, str):
+                normalized_note = note_val.strip().lower()
+                if normalized_note == "sunday only":
+                    note_flag = "sunday_only"
+
+        if note_flag:
+            availability[name_str] = note_flag
+
+    return members, availability
 
 def normalize_name(name):
     """Normalize a name for comparison by removing extra spaces and converting to lowercase"""
@@ -365,7 +396,13 @@ def parse_program(uploaded_files, members_list):
     
     return all_meetings
 
-def generate_schedule(members, meetings):
+def generate_schedule(members, meetings, availability=None):
+    """Generate schedule of hosts per meeting date.
+
+    availability: optional dict name -> flag, e.g. 'sunday_only'.
+    """
+    if availability is None:
+        availability = {}
     dates = list(meetings.keys())
     
     # Create a mapping for Danish month names to numbers for proper sorting
@@ -403,28 +440,43 @@ def generate_schedule(members, meetings):
     schedule = {}
     i = 0
     n = len(members)
+
     for date in dates:
+        is_sunday_meeting = date.startswith("Søndag")
+
+        def is_available(cand: str) -> bool:
+            note = availability.get(cand)
+            # People marked Sunday only cannot be hosts on non-Sunday meetings
+            if note == "sunday_only" and not is_sunday_meeting:
+                return False
+            # Also skip if already involved in that meeting (from PDF)
+            return cand not in meetings[date]
+
         vert1 = None
         vert2 = None
         attempts = 0
         max_attempts = n * 2
+
         while vert1 is None and attempts < max_attempts:
             cand = members[i % n]
             i += 1
             attempts += 1
-            if cand not in meetings[date]:
+            if is_available(cand):
                 vert1 = cand
+
         attempts = 0
         while vert2 is None and attempts < max_attempts:
             cand = members[i % n]
             i += 1
             attempts += 1
-            if cand not in meetings[date]:
+            if is_available(cand):
                 vert2 = cand
+
         if vert1 and vert2:
             schedule[date] = (vert1, vert2)
         else:
             schedule[date] = ('No available', 'No available')
+
     return schedule
 
 def create_xlsx(schedule):
@@ -552,7 +604,7 @@ with st.container():
         st.markdown('</div>', unsafe_allow_html=True)
 
 if uploaded_xlsx and uploaded_pdfs:
-    members = parse_members(uploaded_xlsx)
+    members, availability = parse_members(uploaded_xlsx)
     
     # Show uploaded files info
     st.markdown('<div class="info-box">', unsafe_allow_html=True)
@@ -609,7 +661,7 @@ if uploaded_xlsx and uploaded_pdfs:
                     st.markdown(f"**{date}:** *(ingen opgaver registreret)*")
         
         # Generate and display schedule
-        schedule = generate_schedule(members, meetings)
+        schedule = generate_schedule(members, meetings, availability)
         
         st.markdown("### 📅 Genereret Tidsplan")
         st.markdown('<div class="schedule-table">', unsafe_allow_html=True)
